@@ -24,7 +24,7 @@ cp -r /src/packaging/alpine/. "$work/"
 cd "$work"
 # Everything the package needs to build and test: Alpine's packages one by
 # one (a missing one is reported), ours from their releases.
-deps=$( . ./APKBUILD; echo $depends $makedepends $checkdepends )
+deps=$( set +u; srcdir=/tmp/src pkgdir=/tmp/pkgdir startdir=$PWD; . ./APKBUILD; echo $depends $makedepends $checkdepends )
 for d in $deps; do
 	case $d in
 		py3-b8k-*|b8k-*)
