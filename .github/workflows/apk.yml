@@ -28,8 +28,8 @@ jobs:
   release:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: trudenboy/b8k-ci
           ref: v1
@@ -48,7 +48,7 @@ jobs:
           if [ -f pyproject.toml ]; then
             grep -qx "version = \"$v\"" pyproject.toml || { echo "::error::pyproject.toml version is not $v"; exit 1; }
           fi
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
         if: inputs.arch != 'noarch'
       - name: Build and sign the package
         env:
