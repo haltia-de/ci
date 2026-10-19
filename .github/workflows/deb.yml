@@ -69,18 +69,24 @@ jobs:
           sha256sum *.deb > SHA256SUMS.deb
           cat SHA256SUMS.deb
           gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --generate-notes || true
-          # uploads.github.com answers 404 for some files although it keeps
-          # them: what counts is that every file is in the release with this
-          # build's content (the sha256 GitHub keeps as each file's digest).
-          for try in 1 2 3; do
-            gh release upload "$tag" *.deb SHA256SUMS.deb --clobber || true
-            gh api "repos/$GH_REPO/releases/tags/$tag" \
-              -q '.assets[]|(.digest // "" | ltrimstr("sha256:"))+"  "+.name' > have
-            missing=0
-            for f in *.deb SHA256SUMS.deb; do
-              grep -qx "$(sha256sum "$f")" have || { echo "not yet in the release as built: $f"; missing=1; }
-            done
-            [ $missing = 0 ] && exit 0
-            sleep $((try * 15))
+          # One upload per file, one after the other: uploads.github.com
+          # answers 404 or 422 for files it goes on to keep, and a second
+          # upload with --clobber would delete one still being stored. What
+          # counts is that every file shows up in the release with this
+          # build's content (the sha256 GitHub keeps as its digest); a big
+          # file can take minutes.
+          for f in *.deb SHA256SUMS.deb; do
+            gh release upload "$tag" "$f" --clobber || echo "the upload of $f answered an error: waiting for the release to show it"
           done
+          for try in $(seq 1 40); do
+            gh api "repos/$GH_REPO/releases/tags/$tag" \
+              -q '.assets[]|(.digest // "" | ltrimstr("sha256:"))+"  "+.name' > have || true
+            missing=
+            for f in *.deb SHA256SUMS.deb; do
+              grep -qx "$(sha256sum "$f")" have || missing="$missing $f"
+            done
+            [ -z "$missing" ] && exit 0
+            sleep 15
+          done
+          echo "::error::not in the release as built after 10 minutes:$missing"
           exit 1
