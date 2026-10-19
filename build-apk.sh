@@ -5,8 +5,8 @@
 #   docker run --rm -v "$PWD:/src" -v /path/to/b8k-ci:/ci -e B8K_APK_PRIVKEY="$(cat key)" \
 #     alpine:3.24 sh /ci/build-apk.sh
 # ). /src is the repository at its tag, /ci this repository. The package's
-# own b8k dependencies (py3-b8k-compat, ...) come from their latest GitHub
-# release, the rest from Alpine. Output: /src/out/*.apk.
+# own dependencies (py3-haltia-kit, ...) come from the Haltia apk
+# repository, the rest from Alpine. Output: /src/out/*.apk.
 set -eu
 KEYNAME=trudenboy-b8k-6ad4bb12
 apk add -q --no-cache alpine-sdk wget
@@ -22,32 +22,31 @@ work=/tmp/pkg/packaging
 mkdir -p "$work"
 cp -r /src/packaging/alpine/. "$work/"
 cd "$work"
-# Everything the package needs to build and test: Alpine's packages one by
-# one (a missing one is reported), ours from their releases.
+# Everything the package needs to build and test, one by one (a missing
+# one is reported): Alpine's, and ours from the Haltia apk repository
+# (haltia-de/packages), which has every released package for this
+# architecture under its plain name.
+cp /ci/keys/$KEYNAME.rsa.pub /etc/apk/keys/haltia-de-6ad4bb12.rsa.pub
+echo https://haltia-de.github.io/packages/alpine/v3.24 >>/etc/apk/repositories
+apk update -q || echo "build-apk: the Haltia repository is not reachable" >&2
 deps=$( set +u; srcdir=/tmp/src pkgdir=/tmp/pkgdir startdir=$PWD; . ./APKBUILD; echo $depends $makedepends $checkdepends )
 for d in $deps; do
-	case $d in
-		py3-b8k-*|b8k-*|py3-haltia-*|haltia-*)
-			# The repository in haltia-de: the name without its prefix
-			# (b8k-video -> video), the library is kit.
-			repo=${d#py3-}
-			repo=${repo#b8k-}
-			repo=${repo#haltia-}
-			[ "$repo" = compat ] && repo=kit
-			url=$(wget -qO- "https://api.github.com/repos/haltia-de/$repo/releases/latest" |
-				sed -n 's/.*"browser_download_url": *"\([^"]*\.apk\)".*/\1/p' | head -1)
-			if [ -n "$url" ]; then
-				wget -q -O "/tmp/${url##*/}" "$url" && apk add -q "/tmp/${url##*/}"
-			else
-				echo "build-apk: no release of $repo for $d" >&2
-			fi ;;
-		*)
-			apk add -q --no-cache "$d" || echo "build-apk: $d not in Alpine" >&2 ;;
-	esac
+	apk add -q "$d" || echo "build-apk: $d not in Alpine or Haltia" >&2
 done
 abuild -F checksum
 abuild -F -d -P /tmp/repo
-find /tmp/repo -name '*.apk' -exec cp {} /src/out/ \;
+# One release holds the packages of several architectures: armv7 and
+# noarch keep the plain name, the others carry theirs (name.aarch64.apk),
+# so they do not overwrite each other. The apk repository files them
+# under the plain name again.
+for f in $(find /tmp/repo -name '*.apk'); do
+	arch=$(tar -xzOf "$f" .PKGINFO 2>/dev/null | sed -n 's/^arch = //p' | head -1)
+	base=${f##*/}
+	case $arch in
+		armv7|noarch|'') cp "$f" "/src/out/$base" ;;
+		*) cp "$f" "/src/out/${base%.apk}.$arch.apk" ;;
+	esac
+done
 cd /src/out
 sha256sum ./*.apk | sed 's| \./| |' >SHA256SUMS
 cat SHA256SUMS
