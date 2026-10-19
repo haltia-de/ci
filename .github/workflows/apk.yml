@@ -62,7 +62,10 @@ jobs:
               *) echo "::error::unknown arch $arch"; exit 1 ;;
             esac
             echo "::group::$arch"
-            docker run --rm --platform "$platform" -e B8K_APK_PRIVKEY \
+            # A local image tag holds one platform: pull this one, or the
+            # run reuses the last architecture's image.
+            docker pull -q --platform "$platform" alpine:3.24 >/dev/null
+            docker run --rm --platform "$platform" -e B8K_APK_PRIVKEY -e WANT_ARCH="$arch" \
               -v "$PWD:/src" -v "$PWD/.b8k-ci:/ci" alpine:3.24 sh /ci/build-apk.sh
             echo "::endgroup::"
           done

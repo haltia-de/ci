@@ -9,6 +9,14 @@
 # repository, the rest from Alpine. Output: /src/out/*.apk.
 set -eu
 KEYNAME=trudenboy-b8k-6ad4bb12
+# The architecture asked for (the workflow's WANT_ARCH) must be the one
+# this container runs: a wrong image would build the wrong package.
+have=$(apk --print-arch)
+case ${WANT_ARCH:-} in
+	''|noarch) ;;
+	"$have") ;;
+	*) echo "build-apk: asked for $WANT_ARCH, the container is $have" >&2; exit 1 ;;
+esac
 apk add -q --no-cache alpine-sdk wget
 mkdir -p /root/.abuild /src/out
 printf '%s\n' "${B8K_APK_PRIVKEY:?the signing key}" >/root/.abuild/$KEYNAME.rsa
