@@ -1,4 +1,4 @@
-# The release of a b8k repository (ADR 0002 in trudenboy/lenovo-b8000h-linux):
+# The release of a Haltia repository (ADR 0002 and 0004 in haltia-de/device-lenovo-b8000h):
 # on a vX.Y.Z tag, check that the versions in the files are the tag's,
 # build and sign the Alpine package, and put it with SHA256SUMS into the
 # GitHub release of the tag. A repository calls it from its own
@@ -8,7 +8,7 @@
 #   permissions: { contents: write }
 #   jobs:
 #     apk:
-#       uses: trudenboy/b8k-ci/.github/workflows/apk.yml@v1
+#       uses: haltia-de/ci/.github/workflows/apk.yml@v1
 #       with: { arch: noarch }     # armv7 for a package with C parts
 #       secrets: inherit
 name: apk
@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          repository: trudenboy/b8k-ci
+          repository: haltia-de/ci
           ref: v1
           path: .b8k-ci
       - name: The versions are the tag's

@@ -1,7 +1,7 @@
-# b8k-ci
+# ci
 
-Общий выпуск репозиториев b8k (ADR 0002 в
-[lenovo-b8000h-linux](https://github.com/trudenboy/lenovo-b8000h-linux)):
+Общий выпуск репозиториев Haltia (ADR 0002 и 0004 в
+[device-lenovo-b8000h](https://github.com/haltia-de/device-lenovo-b8000h)):
 по тегу `vX.Y.Z` проверить, что версии в файлах совпадают с тегом, собрать и
 подписать пакет Alpine 3.24 (`noarch` или `armv7`) и выложить его с
 `SHA256SUMS` в GitHub Release.

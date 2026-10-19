@@ -27,9 +27,14 @@ cd "$work"
 deps=$( set +u; srcdir=/tmp/src pkgdir=/tmp/pkgdir startdir=$PWD; . ./APKBUILD; echo $depends $makedepends $checkdepends )
 for d in $deps; do
 	case $d in
-		py3-b8k-*|b8k-*)
+		py3-b8k-*|b8k-*|py3-haltia-*|haltia-*)
+			# The repository in haltia-de: the name without its prefix
+			# (b8k-video -> video), the library is kit.
 			repo=${d#py3-}
-			url=$(wget -qO- "https://api.github.com/repos/trudenboy/$repo/releases/latest" |
+			repo=${repo#b8k-}
+			repo=${repo#haltia-}
+			[ "$repo" = compat ] && repo=kit
+			url=$(wget -qO- "https://api.github.com/repos/haltia-de/$repo/releases/latest" |
 				sed -n 's/.*"browser_download_url": *"\([^"]*\.apk\)".*/\1/p' | head -1)
 			if [ -n "$url" ]; then
 				wget -q -O "/tmp/${url##*/}" "$url" && apk add -q "/tmp/${url##*/}"
