@@ -67,4 +67,9 @@ jobs:
           sha256sum *.flatpak > SHA256SUMS.flatpak
           cat SHA256SUMS.flatpak
           gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --generate-notes || true
-          gh release upload "$tag" *.flatpak SHA256SUMS.flatpak --clobber
+          # uploads.github.com answers 404 now and then: try again.
+          for try in 1 2 3 4; do
+            gh release upload "$tag" *.flatpak SHA256SUMS.flatpak --clobber && exit 0
+            sleep $((try * 15))
+          done
+          exit 1

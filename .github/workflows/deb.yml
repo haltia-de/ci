@@ -2,7 +2,8 @@
 # in haltia-de/device-lenovo-b8000h): on a vX.Y.Z tag, check that
 # debian/changelog is the tag's version, build the packages of debian/ in
 # Ubuntu 24.04 noble and Debian 13 trixie, check them with lintian and put
-# them, named name_version_arch~codename.deb, with SHA256SUMS.deb into the
+# them, named name_version_arch.codename.deb (GitHub turns a ~ in a
+# file name into a dot), with SHA256SUMS.deb into the
 # GitHub release of the tag. A repository adds to its release.yml:
 #
 #   deb:
@@ -40,7 +41,7 @@ jobs:
           mkdir out
           for d in ../*.deb; do
             b=$(basename "$d" .deb)
-            cp "$d" "out/$b~$codename.deb"
+            cp "$d" "out/$b.$codename.deb"
           done
           ls -l out
       - name: lintian
@@ -68,4 +69,9 @@ jobs:
           sha256sum *.deb > SHA256SUMS.deb
           cat SHA256SUMS.deb
           gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --generate-notes || true
-          gh release upload "$tag" *.deb SHA256SUMS.deb --clobber
+          # uploads.github.com answers 404 now and then: try again.
+          for try in 1 2 3 4; do
+            gh release upload "$tag" *.deb SHA256SUMS.deb --clobber && exit 0
+            sleep $((try * 15))
+          done
+          exit 1
