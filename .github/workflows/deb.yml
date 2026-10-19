@@ -1,0 +1,71 @@
+# Debian and Ubuntu packages of a Haltia repository (docs/plan-desktop-packages.md
+# in haltia-de/device-lenovo-b8000h): on a vX.Y.Z tag, check that
+# debian/changelog is the tag's version, build the packages of debian/ in
+# Ubuntu 24.04 noble and Debian 13 trixie, check them with lintian and put
+# them, named name_version_arch~codename.deb, with SHA256SUMS.deb into the
+# GitHub release of the tag. A repository adds to its release.yml:
+#
+#   deb:
+#     uses: haltia-de/ci/.github/workflows/deb.yml@v1
+name: deb
+on:
+  workflow_call: {}
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["ubuntu:noble", "debian:trixie"]
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Build tools and the package's build dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get -qq update
+          apt-get -qq install -y --no-install-recommends build-essential devscripts equivs lintian >/dev/null
+          mk-build-deps -i -r -t 'apt-get -qq -y --no-install-recommends' debian/control >/dev/null
+      - name: The version is the tag's
+        run: |
+          v=${GITHUB_REF_NAME#v}
+          got=$(dpkg-parsechangelog -S Version)
+          [ "$got" = "$v" ] || { echo "::error::debian/changelog is $got, the tag is $GITHUB_REF_NAME"; exit 1; }
+      - name: Build
+        run: |
+          dpkg-buildpackage -us -uc -b
+          codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
+          mkdir out
+          for d in ../*.deb; do
+            b=$(basename "$d" .deb)
+            cp "$d" "out/$b~$codename.deb"
+          done
+          ls -l out
+      - name: lintian
+        run: lintian --fail-on error out/*.deb
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deb-${{ strategy.job-index }}
+          path: out/*.deb
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: deb-*
+          path: out
+          merge-multiple: true
+      - name: The release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag=$GITHUB_REF_NAME
+          cd out
+          sha256sum *.deb > SHA256SUMS.deb
+          cat SHA256SUMS.deb
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --generate-notes || true
+          gh release upload "$tag" *.deb SHA256SUMS.deb --clobber
