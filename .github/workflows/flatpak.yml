@@ -67,9 +67,16 @@ jobs:
           sha256sum *.flatpak > SHA256SUMS.flatpak
           cat SHA256SUMS.flatpak
           gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --generate-notes || true
-          # uploads.github.com answers 404 now and then: try again.
-          for try in 1 2 3 4; do
-            gh release upload "$tag" *.flatpak SHA256SUMS.flatpak --clobber && exit 0
+          # uploads.github.com answers 404 for some files although it keeps
+          # them: what counts is that every file is in the release, at its size.
+          for try in 1 2 3; do
+            gh release upload "$tag" *.flatpak SHA256SUMS.flatpak --clobber || true
+            gh release view "$tag" --json assets -q '.assets[]|.name+" "+(.size|tostring)' > have
+            missing=0
+            for f in *.flatpak SHA256SUMS.flatpak; do
+              grep -qx "$f $(stat -c %s "$f")" have || { echo "not yet in the release: $f"; missing=1; }
+            done
+            [ $missing = 0 ] && exit 0
             sleep $((try * 15))
           done
           exit 1
