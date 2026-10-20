@@ -179,8 +179,11 @@ def bootstrap(meta_path):
 
 def main():
     args = sys.argv[1:]
-    if len(args) >= 3 and args[0] == "metainfo":
-        return metainfo(args[1], args[2], "--check" in args[3:])
+    # --check may stand anywhere after the command.
+    check = "--check" in args
+    args = [a for a in args if a != "--check"]
+    if len(args) == 3 and args[0] == "metainfo":
+        return metainfo(args[1], args[2], check)
     if len(args) == 2 and args[0] == "bootstrap":
         return bootstrap(args[1])
     sys.stderr.write(__doc__)
