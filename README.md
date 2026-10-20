@@ -51,8 +51,8 @@
 
 ## deb и Flatpak
 
-Рядом с `apk.yml` — `deb.yml` (пакеты `debian/` для Ubuntu 24.04 noble и
-Debian 13 trixie, lintian) и `flatpak.yml` (манифест в образе GNOME с
+Рядом с `apk.yml` — `deb.yml` (пакеты `debian/` для Ubuntu 24.04 noble,
+Ubuntu 26.04 resolute и Debian 13 trixie, lintian) и `flatpak.yml` (манифест в образе GNOME с
 Flathub). Оба кладут файлы в выпуск тега со своими `SHA256SUMS.deb` и
 `SHA256SUMS.flatpak` и проверяют каждый загруженный файл по sha256. В
 `release.yml` репозитория:

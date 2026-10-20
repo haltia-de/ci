@@ -1,7 +1,7 @@
 # Debian and Ubuntu packages of a Haltia repository (docs/plan-desktop-packages.md
 # in haltia-de/device-lenovo-b8000h): on a vX.Y.Z tag, check that
 # debian/changelog is the tag's version, build the packages of debian/ in
-# Ubuntu 24.04 noble and Debian 13 trixie, check them with lintian and put
+# Ubuntu 24.04 noble, Ubuntu 26.04 resolute and Debian 13 trixie, check them with lintian and put
 # them, named name_version_arch.codename.deb (GitHub turns a ~ in a
 # file name into a dot), with SHA256SUMS.deb into the
 # GitHub release of the tag. A repository adds to its release.yml:
@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: ["ubuntu:noble", "debian:trixie"]
+        image: ["ubuntu:noble", "ubuntu:resolute", "debian:trixie"]
     runs-on: ubuntu-24.04
     container: ${{ matrix.image }}
     steps:
