@@ -21,6 +21,9 @@ on:
         description: the GNOME runtime version of the manifest (the build image's tag)
         type: string
         default: "51"
+    secrets:
+      PACKAGES_DISPATCH_TOKEN:
+        required: false
 permissions:
   contents: write
 jobs:
@@ -88,3 +91,13 @@ jobs:
           done
           echo "::error::not in the release as built after 10 minutes:$missing"
           exit 1
+      - name: Publish the package repositories now
+        # haltia-de/packages otherwise picks the release up at its next
+        # 30-minute run. The token (actions: write on haltia-de/packages)
+        # comes from the caller's secrets: inherit; without it, skip.
+        env:
+          DISPATCH_TOKEN: ${{ secrets.PACKAGES_DISPATCH_TOKEN }}
+        run: |
+          [ -n "$DISPATCH_TOKEN" ] || { echo "no PACKAGES_DISPATCH_TOKEN: the next scheduled run publishes"; exit 0; }
+          GH_TOKEN=$DISPATCH_TOKEN gh workflow run publish.yml -R haltia-de/packages ||
+            echo "::warning::could not start the haltia-de/packages publish"
