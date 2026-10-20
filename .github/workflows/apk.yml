@@ -48,6 +48,15 @@ jobs:
           if [ -f pyproject.toml ]; then
             grep -qx "version = \"$v\"" pyproject.toml || { echo "::error::pyproject.toml version is not $v"; exit 1; }
           fi
+      - name: The releases are NEWS.md's
+        # A repository with NEWS.md (Russian and English) writes the
+        # metainfo's releases from it with news.py; they must match.
+        if: hashFiles('NEWS.md') != ''
+        run: |
+          for m in data/*.metainfo.xml; do
+            [ -e "$m" ] || continue
+            python3 .b8k-ci/news.py metainfo NEWS.md "$m" --check || exit 1
+          done
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
         if: inputs.arch != 'noarch'
       - name: Build and sign the package

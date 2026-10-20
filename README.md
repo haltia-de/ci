@@ -19,8 +19,33 @@
 Политика версий — SemVer: X — несовместимые изменения (команды, форматы
 файлов, ключи `X-Haltia-…`, API `haltia_kit`), Y — новые возможности, Z —
 исправления и изменения упаковки. Тег = `pkgver` = версия в metainfo и
-`pyproject.toml`; `pkgrel` всегда 0. У каждого `<release>` в metainfo —
-короткое описание по-русски: его показывает «Настройки → Обновления».
+`pyproject.toml`; `pkgrel` всегда 0.
+
+## Что нового: NEWS.md
+
+Описание изменений пишется в `NEWS.md` репозитория, по-русски и
+по-английски (формат — в заголовке `news.py`):
+
+```markdown
+## 2.6.0 (2026-10-20)
+
+### Русский
+
+- Пункт списка.
+
+### English
+
+- A list item.
+```
+
+`python3 news.py metainfo NEWS.md data/X.metainfo.xml` переписывает из него
+раздел `<releases>` metainfo (английский — основной текст AppStream,
+русский — перевод `xml:lang="ru"`); `apk.yml` проверяет, что они совпадают
+(`--check`), когда `NEWS.md` есть. Первый `NEWS.md` из нынешних описаний:
+`python3 news.py bootstrap data/X.metainfo.xml > NEWS.md`. Из metainfo
+пакетов haltia-de/packages собирает каталог AppStream рядом с индексом apk,
+и «Настройки → Обновления» показывают «Что нового» по нему, не скачивая
+пакет.
 
 Лицензия — GPL-2.0.
 
