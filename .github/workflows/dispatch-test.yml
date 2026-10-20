@@ -1,0 +1,12 @@
+# Temporary: checks that PACKAGES_DISPATCH_TOKEN can start the haltia-de/packages publish.
+name: dispatch-test
+on: workflow_dispatch
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.PACKAGES_DISPATCH_TOKEN }}
+        run: |
+          [ -n "$GH_TOKEN" ] || { echo "::error::the secret is empty"; exit 1; }
+          gh workflow run publish.yml -R haltia-de/packages
