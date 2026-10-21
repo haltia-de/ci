@@ -1,12 +1,14 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0
-# Build and sign one repository's Alpine package, inside an alpine:3.24
-# container (the release workflow runs it; by hand:
-#   docker run --rm -v "$PWD:/src" -v /path/to/b8k-ci:/ci -e B8K_APK_PRIVKEY="$(cat key)" \
-#     alpine:3.24 sh /ci/build-apk.sh
+# Build one repository's Alpine package, inside an alpine:3.24 container
+# (the release workflow runs it; by hand:
+#   docker run --rm -v "$PWD:/src" -v /path/to/b8k-ci:/ci alpine:3.24 sh /ci/build-apk.sh
 # ). /src is the repository at its tag, /ci this repository. The package's
 # own dependencies (py3-haltia-kit, ...) come from the Haltia apk
-# repository, the rest from Alpine. Output: /src/out/*.apk.
+# repository, the rest from Alpine. Output: /src/out/*.apk, signed with a
+# throwaway key: the build runs the repository's code (APKBUILD, check()),
+# so the organisation key never comes near it. sign-apk.sh, in a job that
+# runs no repository code, signs them again with the organisation key.
 set -eu
 KEYNAME=trudenboy-b8k-6ad4bb12
 # The architecture asked for (the workflow's WANT_ARCH) must be the one
@@ -19,12 +21,9 @@ case ${WANT_ARCH:-} in
 esac
 apk add -q --no-cache alpine-sdk wget
 mkdir -p /root/.abuild /src/out
-printf '%s\n' "${B8K_APK_PRIVKEY:?the signing key}" >/root/.abuild/$KEYNAME.rsa
-chmod 600 /root/.abuild/$KEYNAME.rsa
-cp /ci/keys/$KEYNAME.rsa.pub /root/.abuild/
-cp /ci/keys/$KEYNAME.rsa.pub /etc/apk/keys/
-echo "PACKAGER_PRIVKEY=/root/.abuild/$KEYNAME.rsa" >/root/.abuild/abuild.conf
-echo 'PACKAGER="trudenboy b8k <noreply@github.com>"' >>/root/.abuild/abuild.conf
+echo 'PACKAGER="trudenboy b8k <noreply@github.com>"' >/root/.abuild/abuild.conf
+# As root: no doas to install the public key with.
+SUDO= abuild-keygen -a -i -n -q
 
 work=/tmp/pkg/packaging
 mkdir -p "$work"
@@ -55,6 +54,4 @@ for f in $(find /tmp/repo -name '*.apk'); do
 		*) cp "$f" "/src/out/${base%.apk}.$arch.apk" ;;
 	esac
 done
-cd /src/out
-sha256sum ./*.apk | sed 's| \./| |' >SHA256SUMS
-cat SHA256SUMS
+ls -l /src/out
