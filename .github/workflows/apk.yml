@@ -123,8 +123,37 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           tag=$GITHUB_REF_NAME
-          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --generate-notes
-          gh release upload "$tag" out/*.apk out/SHA256SUMS --clobber
+          cd out
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --generate-notes || true
+          # One upload per file: uploads.github.com can answer 404 or 422
+          # for files it goes on to keep. Judge success by the release's
+          # sha256 digests, allowing up to 10 minutes for storage.
+          for f in *.apk SHA256SUMS; do
+            gh release upload "$tag" "$f" --clobber || echo "the upload of $f answered an error: waiting for the release to show it"
+          done
+          for try in $(seq 1 40); do
+            if gh api "repos/$GH_REPO/releases/tags/$tag" \
+              -q '.assets[]|(.digest // "" | ltrimstr("sha256:"))+"  "+.name' > have; then
+              missing=
+              for f in *.apk SHA256SUMS; do
+                grep -Fxq "$(sha256sum "$f")" have && continue
+                missing="$missing $f"
+                # Retry twice, only when a successful API response has no
+                # asset by this name. Never clobber one still being stored.
+                if [ "$try" = 10 ] || [ "$try" = 20 ]; then
+                  if ! cut -d ' ' -f3- have | grep -Fxq "$f"; then
+                    gh release upload "$tag" "$f" --clobber || echo "the upload of $f answered an error: waiting for the release to show it"
+                  fi
+                fi
+              done
+              [ -z "$missing" ] && exit 0
+            else
+              missing=" (could not read the release digests)"
+            fi
+            sleep 15
+          done
+          echo "::error::not in the release as built after 10 minutes:$missing"
+          exit 1
       - name: Publish the package repositories now
         # haltia-de/packages otherwise picks the release up at its next
         # 30-minute run. The token (actions: write on haltia-de/packages)
