@@ -14,16 +14,21 @@ not a program and has no program id.
 - `.github/workflows/apk.yml`: reusable workflow; checks `pkgver`/`pkgrel=0`
   in `packaging/alpine/APKBUILD`, the release in `data/*.metainfo.xml`, the
   version in `pyproject.toml`, and the metainfo against `NEWS.md`; builds
-  and signs the Alpine 3.24 package (`noarch`, or `armv7`, `aarch64`,
-  `x86_64`) and uploads it with `SHA256SUMS`. Needs the organization secret
-  `B8K_APK_PRIVKEY`.
+  the Alpine 3.24 package (`noarch`, or `armv7`, `aarch64`, `x86_64`)
+  without secrets, signs it in a separate job that runs only this
+  repository, and uploads it with `SHA256SUMS`. Needs the organization
+  secret `B8K_APK_PRIVKEY`.
 - `.github/workflows/deb.yml`: builds `debian/` in Ubuntu noble, Ubuntu
   resolute and Debian trixie, checks `debian/changelog` against the tag,
   runs lintian, uploads with `SHA256SUMS.deb`.
 - `.github/workflows/flatpak.yml`: builds a Flatpak manifest in Flathub's
   GNOME image, uploads the bundle with `SHA256SUMS.flatpak`.
 - `build-apk.sh`: the Alpine build inside an `alpine:3.24` container; the
-  header shows how to run it by hand with `docker run`.
+  header shows how to run it by hand with `docker run`. It signs with a
+  throwaway key: the build runs the caller's code.
+- `sign-apk.sh`: replaces that signature with the organization key's,
+  inside an `alpine:3.24` container, without running anything of the
+  package.
 - `news.py`: `NEWS.md` (Russian and English) to the metainfo `<releases>`;
   `python3 news.py metainfo NEWS.md data/X.metainfo.xml [--check]` and
   `python3 news.py bootstrap data/X.metainfo.xml > NEWS.md`.

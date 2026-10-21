@@ -27,15 +27,23 @@ on:
 permissions:
   contents: write
 jobs:
-  release:
+  # The build runs the repository's code (APKBUILD, check()): it gets no
+  # secret and no token it could write with, and signs with a throwaway
+  # key. The sign job signs with the organisation key and runs only ci.
+  build:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: haltia-de/ci
           ref: v1
           path: .b8k-ci
+          persist-credentials: false
       - name: The versions are the tag's
         run: |
           tag=$GITHUB_REF_NAME
@@ -61,9 +69,7 @@ jobs:
           done
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
         if: inputs.arch != 'noarch'
-      - name: Build and sign the package
-        env:
-          B8K_APK_PRIVKEY: ${{ secrets.B8K_APK_PRIVKEY }}
+      - name: Build the package
         run: |
           for arch in ${{ inputs.arch }}; do
             case $arch in
@@ -76,13 +82,45 @@ jobs:
             # A local image tag holds one platform: pull this one, or the
             # run reuses the last architecture's image.
             docker pull -q --platform "$platform" alpine:3.24 >/dev/null
-            docker run --rm --platform "$platform" -e B8K_APK_PRIVKEY -e WANT_ARCH="$arch" \
+            docker run --rm --platform "$platform" -e WANT_ARCH="$arch" \
               -v "$PWD:/src" -v "$PWD/.b8k-ci:/ci" alpine:3.24 sh /ci/build-apk.sh
             echo "::endgroup::"
           done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: apk-unsigned
+          path: out/*.apk
+          if-no-files-found: error
+  sign:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: haltia-de/ci
+          ref: v1
+          path: .b8k-ci
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: apk-unsigned
+          path: unsigned
+      - name: Sign the packages
+        env:
+          B8K_APK_PRIVKEY: ${{ secrets.B8K_APK_PRIVKEY }}
+        run: |
+          mkdir -p out
+          docker pull -q alpine:3.24 >/dev/null
+          docker run --rm -e B8K_APK_PRIVKEY -v "$PWD/unsigned:/in:ro" -v "$PWD/out:/out" \
+            -v "$PWD/.b8k-ci:/ci:ro" alpine:3.24 sh /ci/sign-apk.sh
+          # Once, over the packages of every architecture.
+          cd out
+          sha256sum ./*.apk | sed 's| \./| |' >SHA256SUMS
+          cat SHA256SUMS
       - name: The release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           tag=$GITHUB_REF_NAME
           gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --generate-notes
