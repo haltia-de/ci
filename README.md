@@ -1,7 +1,7 @@
 # ci
 
 Общий выпуск репозиториев Haltia (ADR 0002 и 0004 в
-[device-lenovo-b8000h](https://github.com/haltia-de/device-lenovo-b8000h)):
+[haltia](https://github.com/haltia-de/haltia)):
 по тегу `vX.Y.Z` проверить, что версии в файлах совпадают с тегом, собрать и
 подписать пакет Alpine 3.24 (`noarch` или одна-три из `armv7`, `aarch64`,
 `x86_64` через пробел) и выложить его с `SHA256SUMS` в GitHub Release. Файлы

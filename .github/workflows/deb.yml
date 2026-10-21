@@ -1,5 +1,5 @@
-# Debian and Ubuntu packages of a Haltia repository (docs/plan-desktop-packages.md
-# in haltia-de/device-lenovo-b8000h): on a vX.Y.Z tag, check that
+# Debian and Ubuntu packages of a Haltia repository (docs/plans/desktop-packages.md
+# in haltia-de/haltia): on a vX.Y.Z tag, check that
 # debian/changelog is the tag's version, build the packages of debian/ in
 # Ubuntu 24.04 noble, Ubuntu 26.04 resolute and Debian 13 trixie, check them with lintian and put
 # them, named name_version_arch.codename.deb (GitHub turns a ~ in a
