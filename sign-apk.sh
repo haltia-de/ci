@@ -3,7 +3,7 @@
 # Sign the packages of build-apk.sh with the organisation key, inside an
 # alpine:3.24 container that already has abuild, tar and python3 (the
 # release workflow runs it; by hand:
-#   docker run --name b8k-sign alpine:3.24 apk add -q --no-cache abuild tar python3
+#   docker run --name b8k-sign alpine:3.24@sha256:71e9b7bae160ba167fa17414401b94cbcdaf3c32feeab9298bd794a2a0614c35 apk add -q --no-cache abuild tar python3
 #   docker commit b8k-sign b8k-sign
 #   docker run --rm --network none -v "$PWD/unsigned:/in" -v "$PWD/out:/out" \
 #     -v /path/to/b8k-ci:/ci -e B8K_APK_PRIVKEY="$(cat key)" b8k-sign sh /ci/sign-apk.sh
