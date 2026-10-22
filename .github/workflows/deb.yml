@@ -17,6 +17,9 @@ on:
 permissions:
   contents: write
 jobs:
+  # The build runs the repository's code and its build dependencies: it
+  # gets no secret and no token it could write with. The release job runs
+  # none of it.
   build:
     strategy:
       fail-fast: false
@@ -24,8 +27,12 @@ jobs:
         image: ["ubuntu:noble", "ubuntu:resolute", "debian:trixie"]
     runs-on: ubuntu-24.04
     container: ${{ matrix.image }}
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
       - name: Build tools and the package's build dependencies
         run: |
           export DEBIAN_FRONTEND=noninteractive

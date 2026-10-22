@@ -1,17 +1,23 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0
 # Sign the packages of build-apk.sh with the organisation key, inside an
-# alpine:3.24 container (the release workflow runs it; by hand:
-#   docker run --rm -v "$PWD/unsigned:/in" -v "$PWD/out:/out" -v /path/to/b8k-ci:/ci \
-#     -e B8K_APK_PRIVKEY="$(cat key)" alpine:3.24 sh /ci/sign-apk.sh
-# ). It runs nothing of the packages: an apk is three gzip streams, the
-# signature, the control (.PKGINFO) and the data, and abuild signs the
-# control stream. This drops the build's throwaway signature, signs the
-# control stream with abuild-sign as abuild does and joins the three
-# again. Output: /out/*.apk, under the names of /in.
+# alpine:3.24 container that already has abuild, tar and python3 (the
+# release workflow runs it; by hand:
+#   docker run --name b8k-sign alpine:3.24 apk add -q --no-cache abuild tar python3
+#   docker commit b8k-sign b8k-sign
+#   docker run --rm --network none -v "$PWD/unsigned:/in" -v "$PWD/out:/out" \
+#     -v /path/to/b8k-ci:/ci -e B8K_APK_PRIVKEY="$(cat key)" b8k-sign sh /ci/sign-apk.sh
+# ). The tools are installed before the key is there: nothing from the
+# network runs next to it. It runs nothing of the packages: an apk is
+# three gzip streams, the signature, the control (.PKGINFO) and the data,
+# and abuild signs the control stream. This drops the build's throwaway
+# signature, signs the control stream with abuild-sign as abuild does and
+# joins the three again. Output: /out/*.apk, under the names of /in.
 set -eu
 KEYNAME=trudenboy-b8k-6ad4bb12
-apk add -q --no-cache abuild tar python3
+for t in abuild-sign python3 tar; do
+	command -v $t >/dev/null || { echo "sign-apk: no $t: install abuild tar python3 first, without the key" >&2; exit 1; }
+done
 mkdir -p /root/.abuild /out
 (umask 077; printf '%s\n' "${B8K_APK_PRIVKEY:?the signing key}" >/root/.abuild/$KEYNAME.rsa)
 cp /ci/keys/$KEYNAME.rsa.pub /root/.abuild/
