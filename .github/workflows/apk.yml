@@ -1,5 +1,6 @@
 # The release of a Haltia repository (ADR 0002 and 0004 in haltia-de/haltia):
-# on a vX.Y.Z tag, check that the versions in the files are the tag's,
+# on a vX.Y.Z tag (vX.Y.Z_pN for a distribution's package rebuilt with our
+# patches, such as libcamera), check that the versions in the files are the tag's,
 # build and sign the Alpine package, and put it with SHA256SUMS into the
 # GitHub release of the tag. A repository calls it from its own
 # .github/workflows/release.yml:
@@ -48,7 +49,7 @@ jobs:
         run: |
           tag=$GITHUB_REF_NAME
           v=${tag#v}
-          echo "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::tag $tag is not vX.Y.Z"; exit 1; }
+          echo "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(_p[0-9]+)?$' || { echo "::error::tag $tag is not vX.Y.Z or vX.Y.Z_pN"; exit 1; }
           grep -qx "pkgver=$v" packaging/alpine/APKBUILD || { echo "::error::APKBUILD pkgver is not $v"; exit 1; }
           grep -qx "pkgrel=0" packaging/alpine/APKBUILD || { echo "::error::APKBUILD pkgrel is not 0"; exit 1; }
           for m in data/*.metainfo.xml; do
