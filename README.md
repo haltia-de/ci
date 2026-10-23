@@ -4,7 +4,10 @@
 [haltia](https://github.com/haltia-de/haltia)):
 по тегу `vX.Y.Z` проверить, что версии в файлах совпадают с тегом, собрать и
 подписать пакет Alpine 3.24 (`noarch` или одна-три из `armv7`, `aarch64`,
-`x86_64` через пробел) и выложить его с `SHA256SUMS` в GitHub Release. Файлы
+`x86_64` через пробел) и выложить его с `SHA256SUMS` в GitHub Release. Если
+в репозитории есть `debian/` и `packaging/flatpak/`, тот же тег собирает ещё
+deb (Ubuntu 24.04 noble, Ubuntu 26.04 resolute, Debian 13 trixie) и Flatpak
+(x86_64). Файлы
 чужих архитектур называются `name.<arch>.apk`; armv7 и noarch — без суффикса.
 Репозиторий пакетов [haltia-de/packages](https://github.com/haltia-de/packages)
 собирает их в подписанный индекс.
