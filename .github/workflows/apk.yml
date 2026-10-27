@@ -12,6 +12,11 @@
 #       uses: haltia-de/ci/.github/workflows/apk.yml@v1
 #       with: { arch: noarch }     # armv7 for a package with C parts
 #       secrets: inherit
+#
+# To add an architecture to a release already out, a repository runs it by
+# workflow_dispatch from main with the release's tag as `tag`: it builds the
+# tag's sources, adds the packages to that release and merges SHA256SUMS.
+# The tag itself is never moved or made again.
 name: apk
 on:
   workflow_call:
@@ -20,6 +25,10 @@ on:
         description: noarch (built on x86), or one or more of armv7, aarch64, x86_64, space separated (each built in its own Alpine, emulated when foreign)
         type: string
         default: noarch
+      tag:
+        description: an existing release vX.Y.Z to add packages to (when run by workflow_dispatch); empty for the pushed tag
+        type: string
+        default: ""
     secrets:
       B8K_APK_PRIVKEY:
         required: true
@@ -38,6 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
+          ref: ${{ inputs.tag || github.ref }}
           persist-credentials: false
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -46,8 +56,10 @@ jobs:
           path: .b8k-ci
           persist-credentials: false
       - name: The versions are the tag's
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          tag=$GITHUB_REF_NAME
+          tag=$TAG
           v=${tag#v}
           echo "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(_p[0-9]+)?$' || { echo "::error::tag $tag is not vX.Y.Z or vX.Y.Z_pN"; exit 1; }
           grep -qx "pkgver=$v" packaging/alpine/APKBUILD || { echo "::error::APKBUILD pkgver is not $v"; exit 1; }
@@ -122,10 +134,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          tag=$GITHUB_REF_NAME
+          tag=$TAG
           cd out
           gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --generate-notes || true
+          # Keep the sums of the files already in the release that this run
+          # did not build (another architecture added to it later).
+          if gh release download "$tag" -p SHA256SUMS -O ../old.sums 2>/dev/null; then
+            { awk 'NR==FNR { built[$2]; next } !($2 in built)' SHA256SUMS ../old.sums; cat SHA256SUMS; } |
+              sort -k2 >../merged.sums
+            mv ../merged.sums SHA256SUMS
+            cat SHA256SUMS
+          fi
           # One upload per file: uploads.github.com can answer 404 or 422
           # for files it goes on to keep. Judge success by the release's
           # sha256 digests, allowing up to 10 minutes for storage.
