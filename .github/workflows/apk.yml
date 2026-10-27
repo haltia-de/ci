@@ -118,14 +118,21 @@ jobs:
         with:
           name: apk-unsigned
           path: unsigned
+      - name: The signing tools
+        # Installed from the network into an image before the key is
+        # there; the key then meets only that image, with no network.
+        run: |
+          docker pull -q alpine:3.24@sha256:71e9b7bae160ba167fa17414401b94cbcdaf3c32feeab9298bd794a2a0614c35 >/dev/null
+          docker run --name b8k-sign alpine:3.24@sha256:71e9b7bae160ba167fa17414401b94cbcdaf3c32feeab9298bd794a2a0614c35 apk add -q --no-cache abuild tar python3
+          docker commit b8k-sign b8k-sign >/dev/null
+          docker rm b8k-sign >/dev/null
       - name: Sign the packages
         env:
           B8K_APK_PRIVKEY: ${{ secrets.B8K_APK_PRIVKEY }}
         run: |
           mkdir -p out
-          docker pull -q alpine:3.24 >/dev/null
-          docker run --rm -e B8K_APK_PRIVKEY -v "$PWD/unsigned:/in:ro" -v "$PWD/out:/out" \
-            -v "$PWD/.b8k-ci:/ci:ro" alpine:3.24 sh /ci/sign-apk.sh
+          docker run --rm --network none -e B8K_APK_PRIVKEY -v "$PWD/unsigned:/in:ro" -v "$PWD/out:/out" \
+            -v "$PWD/.b8k-ci:/ci:ro" b8k-sign sh /ci/sign-apk.sh
           # Once, over the packages of every architecture.
           cd out
           sha256sum ./*.apk | sed 's| \./| |' >SHA256SUMS
