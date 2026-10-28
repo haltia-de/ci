@@ -29,6 +29,41 @@ work=/tmp/pkg/packaging
 mkdir -p "$work"
 cp -r /src/packaging/alpine/. "$work/"
 cd "$work"
+# Bytecode. A program's Python is installed root-owned (/usr/lib/<name>,
+# site-packages, unpacked wheels), so the session user can never write
+# its __pycache__, and every start compiled every module again. A package
+# that depends on python3 therefore ships its modules compiled: the
+# APKBUILD's package() runs as written, then compileall goes over all of
+# $pkgdir with this container's python3, which is the target's (Alpine
+# 3.24, the architecture built). The .pyc land beside their modules in
+# the same package, root-owned like the rest; an APKBUILD with a -pyc
+# subpackage (default_pyc) still moves site-packages' into it. They are
+# checked-hash: abuild sets every file's mtime to SOURCE_DATE_EPOCH after
+# package(), which a timestamp .pyc would never match, and a module edited
+# on the device is still noticed (hashing the source costs far less than
+# compiling it). -s/-p record the installed path for tracebacks. A module
+# that does not compile fails the build. Python never caches the
+# extensionless script in /usr/bin it is started by.
+if grep -q '^package()' APKBUILD; then
+	sed -i 's/^package()/_haltia_package()/' APKBUILD
+	cat >>APKBUILD <<'EOF'
+
+# Added by haltia-de/ci's build-apk.sh: the package's Python, compiled.
+package() {
+	_haltia_package "$@" || return 1
+	local _d
+	for _d in $depends; do
+		case $_d in
+		python3|python3[\<\>=~]*)
+			msg "Compiling the package's Python modules"
+			python3 -m compileall -q -j0 --invalidation-mode checked-hash \
+				-s "$pkgdir" -p / "$pkgdir" || return 1
+			return 0 ;;
+		esac
+	done
+}
+EOF
+fi
 # Everything the package needs to build and test, one by one (a missing
 # one is reported): Alpine's, and ours from the Haltia apk repository
 # (haltia-de/packages), which has every released package for this

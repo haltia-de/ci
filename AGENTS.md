@@ -25,7 +25,16 @@ not a program and has no program id.
   GNOME image, uploads the bundle with `SHA256SUMS.flatpak`.
 - `build-apk.sh`: the Alpine build inside an `alpine:3.24` container; the
   header shows how to run it by hand with `docker run`. It signs with a
-  throwaway key: the build runs the caller's code.
+  throwaway key: the build runs the caller's code. For a package whose
+  `depends` names `python3` it wraps the APKBUILD's `package()` and runs
+  `python3 -m compileall -j0 --invalidation-mode checked-hash` over the
+  whole `$pkgdir` with the container's Python (the target's), so the
+  modules ship compiled in the same package: the session user cannot
+  write `__pycache__` under root-owned `/usr/lib`, and would otherwise
+  compile them on every start. Hash, not timestamp, as abuild resets
+  every mtime after `package()`. A module that does not compile fails the
+  build. An extensionless `/usr/bin` script is never cached by Python, so
+  a program keeps its code in modules and its script as a stub.
 - `sign-apk.sh`: replaces that signature with the organization key's,
   inside an `alpine:3.24` container, without running anything of the
   package.
