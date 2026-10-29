@@ -13,10 +13,12 @@
 #       with: { arch: noarch }     # armv7 for a package with C parts
 #       secrets: inherit
 #
-# To add an architecture to a release already out, a repository runs it by
-# workflow_dispatch from main with the release's tag as `tag`: it builds the
+# To add an architecture to a release already out, a caller may expose
+# workflow_dispatch with the release's tag as `tag`: it builds the
 # tag's sources, adds the packages to that release and merges SHA256SUMS.
 # The tag itself is never moved or made again.
+# upload-apk.py verifies the exact tag commit and skips identical assets.
+# Package conflicts fail; only APK SHA256SUMS may merge for architecture append.
 name: apk
 on:
   workflow_call:
@@ -36,11 +38,16 @@ on:
         required: false
 permissions:
   contents: write
+concurrency:
+  group: apk-${{ github.repository }}-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 jobs:
   # The build runs the repository's code (APKBUILD, check()): it gets no
   # secret and no token it could write with, and signs with a throwaway
   # key. The sign job signs with the organisation key and runs only ci.
   build:
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -55,6 +62,9 @@ jobs:
           ref: v1
           path: .b8k-ci
           persist-credentials: false
+      - name: Record the build commit
+        id: source
+        run: echo "commit=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
       - name: The versions are the tag's
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
@@ -139,50 +149,14 @@ jobs:
           cat SHA256SUMS
       - name: The release
         env:
+          BUILD_COMMIT: ${{ needs.build.outputs.commit }}
+          APPEND: ${{ inputs.tag != '' }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          tag=$TAG
           cd out
-          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --generate-notes || true
-          # Keep the sums of the files already in the release that this run
-          # did not build (another architecture added to it later).
-          if gh release download "$tag" -p SHA256SUMS -O ../old.sums 2>/dev/null; then
-            { awk 'NR==FNR { built[$2]; next } !($2 in built)' SHA256SUMS ../old.sums; cat SHA256SUMS; } |
-              sort -k2 >../merged.sums
-            mv ../merged.sums SHA256SUMS
-            cat SHA256SUMS
-          fi
-          # One upload per file: uploads.github.com can answer 404 or 422
-          # for files it goes on to keep. Judge success by the release's
-          # sha256 digests, allowing up to 10 minutes for storage.
-          for f in *.apk SHA256SUMS; do
-            gh release upload "$tag" "$f" --clobber || echo "the upload of $f answered an error: waiting for the release to show it"
-          done
-          for try in $(seq 1 40); do
-            if gh api "repos/$GH_REPO/releases/tags/$tag" \
-              -q '.assets[]|(.digest // "" | ltrimstr("sha256:"))+"  "+.name' > have; then
-              missing=
-              for f in *.apk SHA256SUMS; do
-                grep -Fxq "$(sha256sum "$f")" have && continue
-                missing="$missing $f"
-                # Retry twice, only when a successful API response has no
-                # asset by this name. Never clobber one still being stored.
-                if [ "$try" = 10 ] || [ "$try" = 20 ]; then
-                  if ! cut -d ' ' -f3- have | grep -Fxq "$f"; then
-                    gh release upload "$tag" "$f" --clobber || echo "the upload of $f answered an error: waiting for the release to show it"
-                  fi
-                fi
-              done
-              [ -z "$missing" ] && exit 0
-            else
-              missing=" (could not read the release digests)"
-            fi
-            sleep 15
-          done
-          echo "::error::not in the release as built after 10 minutes:$missing"
-          exit 1
+          python3 ../.b8k-ci/upload-apk.py
       - name: Publish the package repositories now
         # haltia-de/packages otherwise picks the release up at its next
         # 30-minute run. The token (actions: write on haltia-de/packages)

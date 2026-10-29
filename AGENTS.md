@@ -38,6 +38,17 @@ not a program and has no program id.
 - `sign-apk.sh`: replaces that signature with the organization key's,
   inside an `alpine:3.24` container, without running anything of the
   package.
+- `upload-apk.py`: shared immutable uploader for APK, deb and Flatpak;
+  verifies the exact tag commit and paginated asset digests. Identical files
+  are no-ops; conflicting bytes fail. Only APK's aggregate `SHA256SUMS` may
+  merge/update for architecture append. An unsealed initial deb/Flatpak batch
+  can resume with an identical existing subset; its format checksum seals
+  the file set. A sealed batch may upload only a declared package missing
+  remotely when that checksum still matches the complete local batch and
+  commit; it may not add, drop or replace files. Relevant open uploads have
+  bounded readiness waits; known other-format open uploads do not block
+  publication. API/metadata errors never authorize replacement or retry
+  uploads.
 - `news.py`: `NEWS.md` (Russian and English) to the metainfo `<releases>`;
   `python3 news.py metainfo NEWS.md data/X.metainfo.xml [--check]` and
   `python3 news.py bootstrap data/X.metainfo.xml > NEWS.md`.
@@ -51,7 +62,7 @@ version policy and the `NEWS.md` format.
 
 Callers use the workflows by the moving tag `v1`
 (`uses: haltia-de/ci/.github/workflows/apk.yml@v1`), and `apk.yml` checks
-out this repository at `v1` for `build-apk.sh`, `news.py` and `keys/`. A
+out this repository at `v1` for `build-apk.sh`, `upload-apk.py`, `news.py` and `keys/`. A
 change here reaches the callers only when `v1` moves.
 
 ## Releases

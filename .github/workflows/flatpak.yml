@@ -9,6 +9,10 @@
 #     uses: haltia-de/ci/.github/workflows/flatpak.yml@v1
 #     with:
 #       manifest: packaging/flatpak/io.github.haltia_de.Weather.yml
+# upload-apk.py verifies the exact tag commit; identical assets are no-ops.
+# Conflicting packages/checksums fail. An unsealed initial batch may resume.
+# A published format checksum seals the file set; a missing declared package
+# may be completed when that checksum still matches the local batch.
 name: flatpak
 on:
   workflow_call:
@@ -63,6 +67,12 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: haltia-de/ci
+          ref: v1
+          path: .b8k-ci
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: flatpak
@@ -71,33 +81,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          BUILD_COMMIT: ${{ github.sha }}
+          TAG: ${{ github.ref_name }}
+          PACKAGE_FORMAT: flatpak
         run: |
-          tag=$GITHUB_REF_NAME
           cd out
-          sha256sum *.flatpak > SHA256SUMS.flatpak
-          cat SHA256SUMS.flatpak
-          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --generate-notes || true
-          # One upload per file, one after the other: uploads.github.com
-          # answers 404 or 422 for files it goes on to keep, and a second
-          # upload with --clobber would delete one still being stored. What
-          # counts is that every file shows up in the release with this
-          # build's content (the sha256 GitHub keeps as its digest); a big
-          # file can take minutes.
-          for f in *.flatpak SHA256SUMS.flatpak; do
-            gh release upload "$tag" "$f" --clobber || echo "the upload of $f answered an error: waiting for the release to show it"
-          done
-          for try in $(seq 1 40); do
-            gh api "repos/$GH_REPO/releases/tags/$tag" \
-              -q '.assets[]|(.digest // "" | ltrimstr("sha256:"))+"  "+.name' > have || true
-            missing=
-            for f in *.flatpak SHA256SUMS.flatpak; do
-              grep -qx "$(sha256sum "$f")" have || missing="$missing $f"
-            done
-            [ -z "$missing" ] && exit 0
-            sleep 15
-          done
-          echo "::error::not in the release as built after 10 minutes:$missing"
-          exit 1
+          python3 ../.b8k-ci/upload-apk.py
       - name: Publish the package repositories now
         # haltia-de/packages otherwise picks the release up at its next
         # 30-minute run. The token (actions: write on haltia-de/packages)
