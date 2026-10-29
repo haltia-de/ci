@@ -47,7 +47,7 @@ class UploadTests(unittest.TestCase):
         if '/releases?' in path:
             return b'[{"tag_name": "v1.0.0", "id": 1}]'
         if '/releases/assets/' in path:
-            return self.data['SHA256SUMS']
+            return list(self.data.values())[int(path.rsplit('/', 1)[1])]
         self.calls += 1
         if self.bad == 'error' or (self.bad == 'poll-error' and self.calls > 1):
             raise subprocess.CalledProcessError(1, 'gh')
@@ -115,6 +115,113 @@ class UploadTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.run_upload()
         self.assertEqual(self.writes, [])
+
+
+class FormatTests(unittest.TestCase):
+    setUp = UploadTests.setUp
+    gh = UploadTests.gh
+
+    def invoke_workflow(self, format):
+        # Execute the uploader entry point named by the actual release step,
+        # with its format environment; replace only the external gh process.
+        import runpy
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / '.github/workflows' / f'{format}.yml').read_text()
+        release = workflow.split('      - name: The release\n')[1].split('      - name: Publish')[0]
+        self.assertIn('BUILD_COMMIT: ${{ github.sha }}', release)
+        self.assertIn('TAG: ${{ github.ref_name }}', release)
+        self.assertIn('repository: haltia-de/ci', workflow.split('  release:')[1])
+        command = release.split('        run: |\n')[1].splitlines()
+        self.assertEqual(command[0].strip(), 'cd out')
+        script = command[1].strip().split()
+        self.assertEqual(script[0], 'python3')
+        self.assertEqual(len(script), 2)
+        format_env = release.split('PACKAGE_FORMAT: ')[1].splitlines()[0]
+        with patch.dict(os.environ, GH_REPO='haltia-de/example', TAG='v1.0.0',
+                        BUILD_COMMIT='a' * 40, PACKAGE_FORMAT=format_env, APPEND='false'), \
+                patch.object(subprocess, 'check_output', lambda args: self.gh(*args[1:])):
+            runpy.run_path(str(root / Path(script[1]).name), run_name='__main__')
+        for write in self.writes:
+            self.assertNotIn('--clobber', write)
+
+    def prepare(self, format):
+        self.data = {'unrelated.txt': b'keep'}
+        self.writes.clear()
+        self.calls = 0
+        self.bad = None
+        self.hidden = {}
+        self.delay = 0
+        Path(f'package.{format}').write_bytes(b'package')
+
+    def test_both_workflow_upload_paths(self):
+        for format in ('deb', 'flatpak'):
+            with self.subTest(format=format):
+                self.prepare(format)
+                self.invoke_workflow(format)
+                self.assertEqual(len(self.writes), 2)
+                self.assertEqual(self.data['unrelated.txt'], b'keep')
+                self.writes.clear()
+                self.invoke_workflow(format)
+                self.assertEqual(self.writes, [])
+
+    def test_conflicts_and_api_failures(self):
+        for format in ('deb', 'flatpak'):
+            for failure in ('package', 'checksum', 'error', 'incomplete', 'ref'):
+                with self.subTest(format=format, failure=failure):
+                    self.prepare(format)
+                    if failure == 'package':
+                        self.data[f'package.{format}'] = b'different'
+                    elif failure == 'checksum':
+                        # Valid checksum content with different bytes is still immutable.
+                        self.data[f'SHA256SUMS.{format}'] = b''
+                    elif failure == 'ref':
+                        with patch.dict(os.environ, BUILD_COMMIT='b' * 40):
+                            # The workflow supplies its exact build commit.
+                            with self.assertRaises(ValueError):
+                                u.run('haltia-de/example', 'v1.0.0', 'b' * 40, False, format)
+                        continue
+                    else:
+                        self.bad = failure
+                    with self.assertRaises((ValueError, KeyError, subprocess.CalledProcessError)):
+                        self.invoke_workflow(format)
+                    self.assertEqual(self.writes, [])
+
+    def test_no_architecture_append(self):
+        for format in ('deb', 'flatpak'):
+            self.prepare(format)
+            self.data[f'old.{format}'] = b'old'
+            with self.assertRaises(ValueError):
+                self.invoke_workflow(format)
+            self.assertEqual(self.writes, [])
+
+    def test_delayed_visibility_and_poll_errors(self):
+        for format in ('deb', 'flatpak'):
+            self.prepare(format)
+            self.delay = 12
+            self.invoke_workflow(format)
+            self.assertEqual(len(self.writes), 6)
+            self.prepare(format)
+            self.bad = 'poll-error'
+            with self.assertRaises(ValueError):
+                self.invoke_workflow(format)
+            self.assertEqual(len(self.writes), 2)
+
+    def test_pagination(self):
+        for format in ('deb', 'flatpak'):
+            self.prepare(format)
+            original = self.gh
+
+            def paginated(*args):
+                import json
+                if '/assets?' in args[-1]:
+                    if 'page=1' == args[-1].split('&')[-1]:
+                        return json.dumps([dict(name=f'unrelated-{i}', digest='sha256:' + '0' * 64,
+                                                state='uploaded', id=i) for i in range(100)]).encode()
+                return original(*args)
+
+            with patch.object(self, 'gh', paginated):
+                self.invoke_workflow(format)
+            self.assertEqual(len(self.writes), 2)
 
 
 if __name__ == '__main__':

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add immutable APK assets; only the aggregate checksum asset may change."""
+"""Upload immutable packages; only the APK aggregate checksum may change."""
 import hashlib
 import json
 import os
@@ -69,7 +69,11 @@ def upload(tag, name):
         print(f'Upload of {name} answered an error; waiting for visibility')
 
 
-def run(repo, tag, commit, append):
+def run(repo, tag, commit, append, format="apk"):
+    if format not in ("apk", "deb", "flatpak") or (append and format != "apk"):
+        raise ValueError("Only APK supports architecture append")
+    checksum = "SHA256SUMS" if format == "apk" else f"SHA256SUMS.{format}"
+    suffix = f".{format}"
     # Resolve annotated as well as lightweight tags to the actual source commit.
     actual = api(f'repos/{repo}/commits/{quote(tag, safe="")}')['sha']
     if not re.fullmatch(r'[0-9a-f]{40}', commit) or actual != commit:
@@ -87,8 +91,8 @@ def run(repo, tag, commit, append):
         release = matches[0]['id']
     have = assets(repo, release)
     old = {}
-    if 'SHA256SUMS' in have:
-        sha, asset_id = have['SHA256SUMS']
+    if checksum in have:
+        sha, asset_id = have[checksum]
         data = gh('api', '-H', 'Accept: application/octet-stream',
                   f'repos/{repo}/releases/assets/{asset_id}')
         if digest(data) != sha:
@@ -97,21 +101,32 @@ def run(repo, tag, commit, append):
     for name, sha in old.items():
         if name not in have or have[name][0] != sha:
             raise ValueError(f'Existing checksum disagrees with asset: {name}')
-    local = {p.name: digest(p.read_bytes()) for p in sorted(Path('.').glob('*.apk'))}
+    local = {p.name: digest(p.read_bytes()) for p in sorted(Path('.').glob(f'*{suffix}'))
+             if p.name != checksum}
     if not local:
-        raise ValueError('No APKs to upload')
+        raise ValueError('No packages to upload')
+    if format != 'apk':
+        existing = {n for n in have if n.endswith(suffix) and n != checksum}
+        if existing and existing != set(local):
+            raise ValueError('Existing package set differs; append is APK-only')
     # Complete every consistency check before the first package write.
     for name, sha in local.items():
         if name in have and have[name][0] != sha:
-            raise ValueError(f'Immutable APK differs: {name}')
+            raise ValueError(f'Immutable package differs: {name}')
         if name in old and old[name] != sha:
             raise ValueError(f'Existing checksum differs: {name}')
-    merged = dict(old)
-    # Retain existing APK digests even if an earlier run never wrote its sums.
-    merged.update({n: v[0] for n, v in have.items() if n.endswith('.apk')})
-    merged.update(local)
-    Path('SHA256SUMS').write_text(''.join(f'{merged[n]}  {n}\n' for n in sorted(merged)))
-    expected = dict(local, SHA256SUMS=digest(Path('SHA256SUMS').read_bytes()))
+    if format == 'apk':
+        merged = dict(old)
+        # Retain APK digests even if an earlier run never wrote its sums.
+        merged.update({n: v[0] for n, v in have.items() if n.endswith('.apk')})
+        merged.update(local)
+    else:
+        merged = local
+    Path(checksum).write_text(''.join(f'{merged[n]}  {n}\n' for n in sorted(merged)))
+    expected = dict(local)
+    expected[checksum] = digest(Path(checksum).read_bytes())
+    if format != 'apk' and checksum in have and have[checksum][0] != expected[checksum]:
+        raise ValueError(f'Immutable checksum differs: {checksum}')
     pending = {n: sha for n, sha in expected.items()
                if n not in have or have[n][0] != sha}
     for name in pending:
@@ -128,8 +143,8 @@ def run(repo, tag, commit, append):
             if not missing:
                 return
             for name in missing:
-                if name.endswith('.apk') and name in visible:
-                    raise ValueError(f'Immutable APK differs after upload: {name}')
+                if name in visible and name != 'SHA256SUMS':
+                    raise ValueError(f'Immutable asset differs after upload: {name}')
                 if attempt in (10, 20) and name not in visible:
                     upload(tag, name)
         time.sleep(15)
@@ -138,4 +153,4 @@ def run(repo, tag, commit, append):
 
 if __name__ == '__main__':
     run(os.environ['GH_REPO'], os.environ['TAG'], os.environ['BUILD_COMMIT'],
-        os.environ.get('APPEND') == 'true')
+        os.environ.get('APPEND') == 'true', os.environ.get('PACKAGE_FORMAT', 'apk'))
