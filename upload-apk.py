@@ -35,17 +35,39 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def assets(repo, release):
+class AssetNotReady(ValueError):
+    pass
+
+
+def assets(repo, release, format):
     found = {}
+    seen = set()
+    waiting = False
     for asset in pages(f'repos/{repo}/releases/{release}/assets'):
         name = asset['name']
         sha = asset['digest']
-        if (not isinstance(name, str) or not name or name in found
-                or asset['state'] != 'uploaded'
-                or not isinstance(sha, str)
-                or not re.fullmatch(r'sha256:[0-9a-f]{64}', sha)):
+        state = asset['state']
+        asset_id = asset['id']
+        if (not isinstance(name, str) or not name or name in seen
+                or type(asset_id) is not int or asset_id < 0):
             raise ValueError('Incomplete or conflicting asset metadata')
-        found[name] = (sha[7:], asset['id'])
+        seen.add(name)
+        valid_digest = isinstance(sha, str) and re.fullmatch(r'sha256:[0-9a-f]{64}', sha)
+        if state == 'open' and sha is None:
+            # Only known other-format assets may be ignored while uploading.
+            known_format = next((f for f in ('apk', 'deb', 'flatpak')
+                                 if name.endswith(f'.{f}') or name ==
+                                 ('SHA256SUMS' if f == 'apk' else f'SHA256SUMS.{f}')), None)
+            if known_format is None:
+                raise ValueError('Unclassifiable in-progress asset')
+            if known_format == format:
+                waiting = True
+            continue
+        if state != 'uploaded' or not valid_digest:
+            raise ValueError('Incomplete or conflicting asset metadata')
+        found[name] = (sha[7:], asset_id)
+    if waiting:
+        raise AssetNotReady('Relevant release assets are still uploading')
     return found
 
 
@@ -89,7 +111,14 @@ def run(repo, tag, commit, append, format="apk"):
         release = api(f'repos/{repo}/releases/tags/{quote(tag, safe="")}')['id']
     else:
         release = matches[0]['id']
-    have = assets(repo, release)
+    for attempt in range(40):
+        try:
+            have = assets(repo, release, format)
+            break
+        except AssetNotReady:
+            time.sleep(15)
+    else:
+        raise ValueError('Release assets not ready after 10 minutes')
     old = {}
     if checksum in have:
         sha, asset_id = have[checksum]
@@ -107,7 +136,8 @@ def run(repo, tag, commit, append, format="apk"):
         raise ValueError('No packages to upload')
     if format != 'apk':
         existing = {n for n in have if n.endswith(suffix) and n != checksum}
-        if existing and existing != set(local):
+        if (not existing.issubset(local)
+                or (checksum in have and existing != set(local))):
             raise ValueError('Existing package set differs; append is APK-only')
     # Complete every consistency check before the first package write.
     for name, sha in local.items():
@@ -133,7 +163,7 @@ def run(repo, tag, commit, append, format="apk"):
         upload(tag, name)
     for attempt in range(1, 41):
         try:
-            visible = assets(repo, release)
+            visible = assets(repo, release, format)
         except (subprocess.CalledProcessError, ValueError, KeyError, TypeError):
             # A failed/incomplete response never authorizes a retry upload.
             visible = None

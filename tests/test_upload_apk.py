@@ -206,6 +206,104 @@ class FormatTests(unittest.TestCase):
                 self.invoke_workflow(format)
             self.assertEqual(len(self.writes), 2)
 
+    def test_parallel_other_format_in_progress(self):
+        import json
+        for format, other in (('deb', 'flatpak'), ('flatpak', 'deb')):
+            self.prepare(format)
+            self.invoke_workflow(format)
+            self.writes.clear()
+            original = self.gh
+
+            def listing(*args):
+                data = original(*args)
+                if '/assets?' in args[-1]:
+                    rows = json.loads(data)
+                    rows.append(dict(name=f'parallel.{other}', digest=None, state='open', id=99))
+                    return json.dumps(rows).encode()
+                return data
+
+            with patch.object(self, 'gh', listing):
+                self.invoke_workflow(format)
+            self.assertEqual(self.writes, [])
+
+    def test_relevant_in_progress_waits_without_replacement(self):
+        import json
+        for format in ('deb', 'flatpak'):
+            self.prepare(format)
+            self.data[f'package.{format}'] = b'package'
+            original = self.gh
+
+            def listing(*args):
+                data = original(*args)
+                if '/assets?' in args[-1] and self.calls <= 12:
+                    rows = json.loads(data)
+                    rows[-1].update(state='open', digest=None)
+                    return json.dumps(rows).encode()
+                return data
+
+            with patch.object(self, 'gh', listing):
+                self.invoke_workflow(format)
+            self.assertEqual([w[3] for w in self.writes], [f'SHA256SUMS.{format}'])
+
+    def test_interrupted_initial_batch(self):
+        for format in ('deb', 'flatpak'):
+            self.prepare(format)
+            self.data[f'package.{format}'] = b'package'
+            Path(f'second.{format}').write_bytes(b'second')
+            self.invoke_workflow(format)
+            self.assertEqual([w[3] for w in self.writes],
+                             [f'second.{format}', f'SHA256SUMS.{format}'])
+            self.writes.clear()
+            Path(f'third.{format}').write_bytes(b'third')
+            with self.assertRaises(ValueError):
+                self.invoke_workflow(format)
+            self.assertEqual(self.writes, [])
+
+    def test_relevant_readiness_is_bounded(self):
+        import json
+        self.prepare('deb')
+        original = self.gh
+
+        def listing(*args):
+            if '/assets?' in args[-1]:
+                return json.dumps([dict(name='package.deb', digest=None, state='open', id=99)]).encode()
+            return original(*args)
+
+        with patch.object(self, 'gh', listing), patch.object(u.time, 'sleep') as sleep:
+            with self.assertRaises(ValueError):
+                self.invoke_workflow('deb')
+        self.assertEqual(sleep.call_count, 40)
+        self.assertEqual(self.writes, [])
+
+    def test_sealed_batch_cannot_drop_package(self):
+        for format in ('deb', 'flatpak'):
+            self.prepare(format)
+            path = Path(f'extra.{format}')
+            path.write_bytes(b'extra')
+            self.invoke_workflow(format)
+            self.writes.clear()
+            path.unlink()
+            with self.assertRaises(ValueError):
+                self.invoke_workflow(format)
+            self.assertEqual(self.writes, [])
+
+    def test_unclassifiable_in_progress_fails_closed(self):
+        import json
+        for name in ('unknown', None):
+            self.prepare('deb')
+            original = self.gh
+
+            def listing(*args):
+                data = original(*args)
+                if '/assets?' in args[-1]:
+                    return json.dumps([dict(name=name, digest=None, state='open', id=99)]).encode()
+                return data
+
+            with patch.object(self, 'gh', listing):
+                with self.assertRaises(ValueError):
+                    self.invoke_workflow('deb')
+            self.assertEqual(self.writes, [])
+
     def test_pagination(self):
         for format in ('deb', 'flatpak'):
             self.prepare(format)

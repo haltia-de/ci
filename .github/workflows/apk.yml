@@ -13,10 +13,12 @@
 #       with: { arch: noarch }     # armv7 for a package with C parts
 #       secrets: inherit
 #
-# To add an architecture to a release already out, a repository runs it by
-# workflow_dispatch from main with the release's tag as `tag`: it builds the
+# To add an architecture to a release already out, a caller may expose
+# workflow_dispatch with the release's tag as `tag`: it builds the
 # tag's sources, adds the packages to that release and merges SHA256SUMS.
 # The tag itself is never moved or made again.
+# upload-apk.py verifies the exact tag commit and skips identical assets.
+# Package conflicts fail; only APK SHA256SUMS may merge for architecture append.
 name: apk
 on:
   workflow_call:
