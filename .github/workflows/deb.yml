@@ -9,8 +9,9 @@
 #   deb:
 #     uses: haltia-de/ci/.github/workflows/deb.yml@v1
 # upload-apk.py verifies the exact tag commit; identical assets are no-ops.
-# Conflicting packages/checksums fail. An unsealed initial batch may resume;
-# after the format checksum is published the file set cannot change.
+# Conflicting packages/checksums fail. An unsealed initial batch may resume.
+# A published format checksum seals the file set; a missing declared package
+# may be completed when that checksum still matches the local batch.
 name: deb
 on:
   workflow_call:

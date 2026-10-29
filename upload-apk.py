@@ -127,17 +127,24 @@ def run(repo, tag, commit, append, format="apk"):
         if digest(data) != sha:
             raise ValueError('SHA256SUMS download does not match its digest')
         old = sums(data)
-    for name, sha in old.items():
-        if name not in have or have[name][0] != sha:
-            raise ValueError(f'Existing checksum disagrees with asset: {name}')
     local = {p.name: digest(p.read_bytes()) for p in sorted(Path('.').glob(f'*{suffix}'))
              if p.name != checksum}
     if not local:
         raise ValueError('No packages to upload')
+    # A checksum name may be absent from the listing only when the matching
+    # local file is present. Listing errors already failed closed.
+    for name, sha in old.items():
+        if name in have:
+            if have[name][0] != sha:
+                raise ValueError(f'Existing checksum disagrees with asset: {name}')
+        elif name not in local or local[name] != sha:
+            raise ValueError(f'Existing checksum disagrees with asset: {name}')
     if format != 'apk':
         existing = {n for n in have if n.endswith(suffix) and n != checksum}
+        # A published seal may complete a missing declared package when it
+        # still matches the local batch; it may not add, drop or replace files.
         if (not existing.issubset(local)
-                or (checksum in have and existing != set(local))):
+                or (checksum in have and old != local)):
             raise ValueError('Existing package set differs; append is APK-only')
     # Complete every consistency check before the first package write.
     for name, sha in local.items():

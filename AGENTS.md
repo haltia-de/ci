@@ -43,9 +43,12 @@ not a program and has no program id.
   are no-ops; conflicting bytes fail. Only APK's aggregate `SHA256SUMS` may
   merge/update for architecture append. An unsealed initial deb/Flatpak batch
   can resume with an identical existing subset; its format checksum seals
-  the file set. Relevant open uploads have bounded readiness waits; known
-  other-format open uploads do not block publication. API/metadata errors
-  never authorize replacement or retry uploads.
+  the file set. A sealed batch may upload only a declared package missing
+  remotely when that checksum still matches the complete local batch and
+  commit; it may not add, drop or replace files. Relevant open uploads have
+  bounded readiness waits; known other-format open uploads do not block
+  publication. API/metadata errors never authorize replacement or retry
+  uploads.
 - `news.py`: `NEWS.md` (Russian and English) to the metainfo `<releases>`;
   `python3 news.py metainfo NEWS.md data/X.metainfo.xml [--check]` and
   `python3 news.py bootstrap data/X.metainfo.xml > NEWS.md`.

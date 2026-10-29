@@ -287,6 +287,51 @@ class FormatTests(unittest.TestCase):
                 self.invoke_workflow(format)
             self.assertEqual(self.writes, [])
 
+    def test_sealed_incomplete_missing_package_recovers(self):
+        for format in ('deb', 'flatpak'):
+            with self.subTest(format=format):
+                self.prepare(format)
+                pkg = f'package.{format}'
+                missing = f'missing.{format}'
+                checksum = f'SHA256SUMS.{format}'
+                Path(missing).write_bytes(b'missing')
+                self.data[pkg] = b'package'
+                sums = (
+                    f'{u.digest(b"missing")}  {missing}\n'
+                    f'{u.digest(b"package")}  {pkg}\n'
+                ).encode()
+                self.data[checksum] = sums
+                before = dict(self.data)
+                self.invoke_workflow(format)
+                self.assertEqual([w[3] for w in self.writes], [missing])
+                self.assertEqual(self.data[missing], b'missing')
+                self.assertEqual(self.data[pkg], before[pkg])
+                self.assertEqual(self.data[checksum], before[checksum])
+                self.assertEqual(self.data['unrelated.txt'], b'keep')
+                self.writes.clear()
+                self.invoke_workflow(format)
+                self.assertEqual(self.writes, [])
+
+    def test_sealed_incomplete_rejects_digest_and_new_name(self):
+        for format in ('deb', 'flatpak'):
+            for case in ('digest', 'new-name'):
+                with self.subTest(format=format, case=case):
+                    self.prepare(format)
+                    pkg = f'package.{format}'
+                    checksum = f'SHA256SUMS.{format}'
+                    self.data[checksum] = f'{u.digest(b"package")}  {pkg}\n'.encode()
+                    if case == 'digest':
+                        Path(pkg).write_bytes(b'different')
+                    else:
+                        Path(f'extra.{format}').write_bytes(b'extra')
+                    with self.assertRaises(ValueError):
+                        self.invoke_workflow(format)
+                    self.assertEqual(self.writes, [])
+                    self.assertNotIn(pkg, self.data)
+                    self.assertNotIn(f'extra.{format}', self.data)
+                    self.assertEqual(self.data[checksum],
+                                     f'{u.digest(b"package")}  {pkg}\n'.encode())
+
     def test_unclassifiable_in_progress_fails_closed(self):
         import json
         for name in ('unknown', None):
